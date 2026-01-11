@@ -2,7 +2,8 @@
 
 A comprehensive IoT environmental monitoring solution using the **Heltec WiFi Kit 32 V3** and a **BME680** sensor. The device measures temperature, humidity, pressure, and gas resistance (IAQ indicator), displays live data on the onboard OLED, and logs historical data to a self-hosted Python/Flask server.
 
-*(Replace with a screenshot of your dashboard if available)*
+<img width="1111" height="953" alt="shot_11-01-2026_004" src="https://github.com/user-attachments/assets/6614a44b-57d3-4ec5-a5a2-6682ae32aef6" />
+
 
 ## Features
 
