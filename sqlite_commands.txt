@@ -1,7 +1,0 @@
-### fetch latest 5 entries
-
-python -c "import sqlite3; c = sqlite3.connect('klima.db').cursor(); print(c.execute('SELECT * FROM measurements ORDER BY id DESC LIMIT 5').fetchall())
-
-### delete all entries and rest increment
-
-python -c "import sqlite3, config; c = sqlite3.connect(klima.db); c.execute('DROP TABLE IF EXISTS measurements'); c.commit(); print('Datenbank resettet.')"
