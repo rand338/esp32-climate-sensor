@@ -10,7 +10,7 @@ app = Flask(__name__)
 
 # --- DATABASE ---
 def get_db_connection():
-    # Access via config.DB_NAME
+    # Access database name via config.DB_NAME
     conn = sqlite3.connect(config.DB_NAME)
     conn.row_factory = sqlite3.Row 
     return conn
@@ -19,6 +19,7 @@ def get_db_connection():
 def init_db():
     conn = get_db_connection()
     c = conn.cursor()
+    # Create table if it doesn't exist
     c.execute('''CREATE TABLE IF NOT EXISTS measurements
                  (id INTEGER PRIMARY KEY AUTOINCREMENT, 
                   timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -236,7 +237,7 @@ def get_history():
 def post_data():
     received_key = request.form.get('api_key')
     
-    # Access via config.API_KEY
+    # Check API key from config
     if received_key != config.API_KEY:
         return jsonify({"status": "error", "message": "Invalid API Key"}), 403
 
@@ -263,5 +264,5 @@ def post_data():
 
 
 if __name__ == '__main__':
-    # Access via config.HOST, config.PORT, config.DEBUG
+    # Start server using settings from config.py
     app.run(host=config.HOST, port=config.PORT, debug=config.DEBUG)
