@@ -12,3 +12,4 @@ PORT = 5000
 DEBUG = True      # True for developement, false for production
 
 TIME_FORMAT_12H = False  # Set to True for AM/PM format, False for 24h format
+ 
