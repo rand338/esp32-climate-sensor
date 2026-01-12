@@ -1,10 +1,3 @@
-<img width="1080" height="1034" alt="shot_12-01-2026_003" src="https://github.com/user-attachments/assets/7a0b6487-864c-4fdc-a865-8dbc3675fa0b" />
-
-<img width="900" height="326" alt="shot_12-01-2026_004" src="https://github.com/user-attachments/assets/772b538b-42ad-40af-b26f-89b1b28e2dd4" />
-
-<img width="925" height="166" alt="shot_12-01-2026_005" src="https://github.com/user-attachments/assets/9c7ba54b-4381-4e0c-b468-6643fdbf9f72" />
-
-
 # ESP32 Environment Monitor (IoT)
 
 A versatile IoT environmental monitoring solution supporting both **Heltec WiFi Kit 32 V3** (with OLED) and standard **ESP32 DevKits** (headless). The device measures temperature, humidity, pressure, and gas resistance using a **BME680** sensor and logs historical data to a self-hosted Python/Flask server.
@@ -498,6 +491,16 @@ Built with the following third-party libraries:
 * **AsyncTCP** by me-no-dev (LGPL 2.1)
 * **Flask** – Python web framework (BSD-3-Clause)
 * **Chart.js** – JavaScript charting library (MIT License)
+
+
+### example images
+<img width="1080" height="1034" alt="shot_12-01-2026_003" src="https://github.com/user-attachments/assets/7a0b6487-864c-4fdc-a865-8dbc3675fa0b" />
+
+<img width="900" height="326" alt="shot_12-01-2026_004" src="https://github.com/user-attachments/assets/772b538b-42ad-40af-b26f-89b1b28e2dd4" />
+
+<img width="925" height="166" alt="shot_12-01-2026_005" src="https://github.com/user-attachments/assets/9c7ba54b-4381-4e0c-b468-6643fdbf9f72" />
+
+
 
 Hardware documentation references:
 
