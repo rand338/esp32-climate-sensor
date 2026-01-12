@@ -1,12 +1,12 @@
 # config.py
 
-# API Key für den ESP32 (Muss mit config.h im Sketch übereinstimmen)
-API_KEY = "MeinGeheimesIoTKennwort123"
+# API Key for the ESP32 (Must match config.h in the sketch)
+API_KEY = "MySecretIoTKey123"
 
-# Name der SQLite Datenbank Datei
-DB_NAME = "klima.db"
+# Name of the SQLite database file
+DB_NAME = "climate.db"
 
-# Server Einstellungen
-HOST = '0.0.0.0'  # 0.0.0.0 = Erreichbar im Netzwerk
+# Server Settings
+HOST = '0.0.0.0'  # 0.0.0.0 = Accessible within the network
 PORT = 5000
-DEBUG = True      # True für Entwicklung, False für Produktion
+DEBUG = True      # True for development, False for production
