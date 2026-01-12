@@ -1,17 +1,20 @@
 from flask import Flask, request, jsonify, render_template_string
 import sqlite3
 import datetime
-# NEU: Konfiguration importieren
+# NEW: Import Configuration
 import config 
+
 
 app = Flask(__name__)
 
-# --- DATENBANK ---
+
+# --- DATABASE ---
 def get_db_connection():
-    # Zugriff jetzt über config.DB_NAME
+    # Access via config.DB_NAME
     conn = sqlite3.connect(config.DB_NAME)
     conn.row_factory = sqlite3.Row 
     return conn
+
 
 def init_db():
     conn = get_db_connection()
@@ -26,14 +29,14 @@ def init_db():
     conn.commit()
     conn.close()
 
+
 init_db()
 
-# --- HTML TEMPLATE (bleibt gleich, hier gekürzt dargestellt) ---
+
+# --- HTML TEMPLATE (Frontend) ---
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html>
-<!-- ... (Füge hier den exakt gleichen HTML String wie vorher ein) ... -->
-<!-- ... ich spare Platz, da sich am HTML nichts ändert ... -->
 <head>
     <title>IoT Server Dashboard</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -59,19 +62,19 @@ HTML_TEMPLATE = """
 </head>
 <body>
     <div class="container">
-        <h1>Server Historie</h1>
+        <h1>Server History</h1>
         
         <div class="stats-row">
             <div class="card" style="border-color: #ff6384">
-                <div class="label">Temperatur</div>
+                <div class="label">Temperature</div>
                 <div class="val" id="cur-temp">--</div>
             </div>
             <div class="card" style="border-color: #36a2eb">
-                <div class="label">Feuchte</div>
+                <div class="label">Humidity</div>
                 <div class="val" id="cur-hum">--</div>
             </div>
             <div class="card" style="border-color: #4bc0c0">
-                <div class="label">Druck</div>
+                <div class="label">Pressure</div>
                 <div class="val" id="cur-pres">--</div>
             </div>
              <div class="card" style="border-color: #ffcd56">
@@ -80,6 +83,7 @@ HTML_TEMPLATE = """
             </div>
         </div>
 
+
         <div class="chart-container">
             <canvas id="tempChart"></canvas>
         </div>
@@ -87,6 +91,7 @@ HTML_TEMPLATE = """
             <canvas id="humChart"></canvas>
         </div>
     </div>
+
 
 <script>
     const commonOptions = {
@@ -107,7 +112,9 @@ HTML_TEMPLATE = """
         plugins: { legend: { labels: { color: '#eee' } } }
     };
 
+
     let tempChart, humChart;
+
 
     async function loadData() {
         try {
@@ -120,6 +127,7 @@ HTML_TEMPLATE = """
             const press = data.map(d => d.pressure);
             const gases = data.map(d => d.gas_resistance / 1000.0); 
 
+
             if (data.length > 0) {
                 const last = data[data.length - 1];
                 document.getElementById('cur-temp').innerText = last.temperature.toFixed(1) + " °C";
@@ -128,6 +136,7 @@ HTML_TEMPLATE = """
                 document.getElementById('cur-gas').innerText = (last.gas_resistance / 1000).toFixed(1);
             }
 
+
             const ctxTemp = document.getElementById('tempChart').getContext('2d');
             if (tempChart) tempChart.destroy();
             tempChart = new Chart(ctxTemp, {
@@ -135,7 +144,7 @@ HTML_TEMPLATE = """
                 data: {
                     labels: times,
                     datasets: [{
-                        label: 'Temperatur (°C)',
+                        label: 'Temperature (°C)',
                         data: temps,
                         borderColor: '#ff6384',
                         backgroundColor: 'rgba(255, 99, 132, 0.2)',
@@ -147,6 +156,7 @@ HTML_TEMPLATE = """
                 options: commonOptions
             });
 
+
             const ctxHum = document.getElementById('humChart').getContext('2d');
             if (humChart) humChart.destroy();
             humChart = new Chart(ctxHum, {
@@ -155,14 +165,14 @@ HTML_TEMPLATE = """
                     labels: times,
                     datasets: [
                         {
-                            label: 'Feuchte (%)',
+                            label: 'Humidity (%)',
                             data: hums,
                             borderColor: '#36a2eb',
                             borderWidth: 2,
                             yAxisID: 'y'
                         },
                         {
-                            label: 'Luftqualität (kOhm)',
+                            label: 'Air Quality (kOhm)',
                             data: gases,
                             borderColor: '#ffcd56',
                             borderWidth: 2,
@@ -180,10 +190,12 @@ HTML_TEMPLATE = """
                 }
             });
 
+
         } catch (err) {
-            console.error("Fehler beim Laden:", err);
+            console.error("Error loading data:", err);
         }
     }
+
 
     loadData();
     setInterval(loadData, 30000); 
@@ -192,14 +204,18 @@ HTML_TEMPLATE = """
 </html>
 """
 
+
 # --- ROUTES ---
+
 
 @app.route('/')
 def dashboard():
     return render_template_string(HTML_TEMPLATE)
 
+
 @app.route('/api/history')
 def get_history():
+    # Fetch last 50 entries
     conn = get_db_connection()
     measurements = conn.execute('SELECT * FROM (SELECT * FROM measurements ORDER BY id DESC LIMIT 50) ORDER BY id ASC').fetchall()
     conn.close()
@@ -215,13 +231,15 @@ def get_history():
         })
     return jsonify(data)
 
+
 @app.route('/post-data', methods=['POST'])
 def post_data():
     received_key = request.form.get('api_key')
     
-    # Zugriff jetzt über config.API_KEY
+    # Access via config.API_KEY
     if received_key != config.API_KEY:
         return jsonify({"status": "error", "message": "Invalid API Key"}), 403
+
 
     try:
         temp = float(request.form.get('temperature'))
@@ -236,12 +254,14 @@ def post_data():
         conn.commit()
         conn.close()
         
-        print(f"[{datetime.datetime.now()}] Gespeichert: {temp}°C")
+        print(f"[{datetime.datetime.now()}] Saved: {temp}°C")
         return jsonify({"status": "success"}), 200
+
 
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 400
 
+
 if __name__ == '__main__':
-    # Zugriff über config.HOST, config.PORT, config.DEBUG
+    # Access via config.HOST, config.PORT, config.DEBUG
     app.run(host=config.HOST, port=config.PORT, debug=config.DEBUG)
