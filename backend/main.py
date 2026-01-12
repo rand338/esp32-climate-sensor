@@ -7,7 +7,6 @@ app = Flask(__name__)
 
 # --- DATABASE ---
 def get_db_connection():
-    # Access database name via config.DB_NAME
     conn = sqlite3.connect(config.DB_NAME)
     conn.row_factory = sqlite3.Row 
     return conn
@@ -15,7 +14,6 @@ def get_db_connection():
 def init_db():
     conn = get_db_connection()
     c = conn.cursor()
-    # Create table if it doesn't exist
     c.execute('''CREATE TABLE IF NOT EXISTS measurements
                  (id INTEGER PRIMARY KEY AUTOINCREMENT, 
                   timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -86,7 +84,15 @@ HTML_TEMPLATE = """
     </div>
 
 <script>
-    // Global variable for current time range
+  // Config value from Python
+    const use12h = {{ 'true' if use_12h else 'false' }};
+
+    // Format Strings definieren (für alle Units!)
+    const fmtFull   = use12h ? 'MM/dd hh:mm aa' : 'dd.MM HH:mm';
+    const fmtHour   = use12h ? 'hh:mm aa'       : 'HH:mm';
+    const fmtMinute = use12h ? 'hh:mm aa'       : 'HH:mm'; // Wichtig für Zoom!
+    const fmtDay    = use12h ? 'MM/dd'          : 'dd.MM';
+
     let currentRange = 'day';
 
     const commonOptions = {
@@ -95,10 +101,12 @@ HTML_TEMPLATE = """
             x: {
                 type: 'time',
                 time: { 
-                    tooltipFormat: 'dd.MM HH:mm',
+                    tooltipFormat: fmtFull,
+                    // WICHTIG: Hier alle Units definieren
                     displayFormats: { 
-                        hour: 'HH:mm', 
-                        day: 'dd.MM' 
+                        minute: fmtMinute,
+                        hour: fmtHour, 
+                        day: fmtDay
                     } 
                 },
                 grid: { color: '#444' }, ticks: { color: '#aaa' }
@@ -198,7 +206,8 @@ HTML_TEMPLATE = """
 
 @app.route('/')
 def dashboard():
-    return render_template_string(HTML_TEMPLATE)
+    # Pass the config value to the template
+    return render_template_string(HTML_TEMPLATE, use_12h=config.TIME_FORMAT_12H)
 
 @app.route('/api/history')
 def get_history():
@@ -243,8 +252,7 @@ def get_history():
         """
         
     elif time_range == 'month':
-        # Last 30 days, grouped by 4-hour blocks (approximated by hour here for simplicity or day)
-        # Using grouping by hour to keep reasonable resolution
+        # Last 30 days, grouped by hour (Average)
         query = """
             SELECT strftime('%Y-%m-%d %H:00:00', timestamp) as ts_group, 
                    AVG(temperature) as temperature, 
@@ -258,7 +266,6 @@ def get_history():
         """
 
     else: # Fallback
-        # Fallback to day view
         query = "SELECT * FROM measurements ORDER BY id DESC LIMIT 100"
 
     try:
@@ -269,7 +276,6 @@ def get_history():
         data = []
         for m in measurements:
             # Handle different column names (timestamp vs ts_group)
-            # SQLite fetchall returns rows that act like dicts thanks to row_factory
             keys = m.keys()
             ts = m['timestamp'] if 'timestamp' in keys else m['ts_group']
             
