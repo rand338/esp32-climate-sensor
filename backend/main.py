@@ -14,9 +14,11 @@ def get_db_connection():
 def init_db():
     conn = get_db_connection()
     c = conn.cursor()
+    # Updated Schema with device_id
     c.execute('''CREATE TABLE IF NOT EXISTS measurements
                  (id INTEGER PRIMARY KEY AUTOINCREMENT, 
                   timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+                  device_id TEXT,
                   temperature REAL, 
                   humidity REAL, 
                   pressure REAL, 
@@ -26,21 +28,27 @@ def init_db():
 
 init_db()
 
-# --- HTML TEMPLATE (Frontend) ---
+# --- HTML TEMPLATE ---
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html>
 <head>
-    <title>IoT Server Dashboard</title>
+    <title>IoT Multi-Sensor Dashboard</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
     <style>
         body { font-family: 'Segoe UI', sans-serif; background: #1a1a1a; color: #eee; margin: 0; padding: 20px; }
         .container { max-width: 1000px; margin: 0 auto; }
-        h1 { color: #03a9f4; text-align: center; }
+        h1 { color: #03a9f4; text-align: center; margin-bottom: 10px; }
         
-        /* New Button Bar */
+        /* Device Selector */
+        .device-selector { text-align: center; margin-bottom: 20px; }
+        select { 
+            background: #333; color: #eee; border: 1px solid #555; 
+            padding: 8px 16px; font-size: 1rem; border-radius: 4px; 
+        }
+
         .controls { text-align: center; margin-bottom: 20px; }
         .btn { 
             background: #333; color: #eee; border: 1px solid #555; 
@@ -62,8 +70,16 @@ HTML_TEMPLATE = """
 </head>
 <body>
     <div class="container">
-        <h1>Server History</h1>
+        <h1>Climate Dashboard</h1>
         
+        <!-- Device Selector -->
+        <div class="device-selector">
+            <label for="deviceSelect">Sensor: </label>
+            <select id="deviceSelect" onchange="changeDevice()">
+                <option value="">Loading...</option>
+            </select>
+        </div>
+
         <div class="stats-row">
             <div class="card" style="border-color: #ff6384"><div class="label">Temperature</div><div class="val" id="cur-temp">--</div></div>
             <div class="card" style="border-color: #36a2eb"><div class="label">Humidity</div><div class="val" id="cur-hum">--</div></div>
@@ -71,7 +87,6 @@ HTML_TEMPLATE = """
             <div class="card" style="border-color: #ffcd56"><div class="label">Gas (kOhm)</div><div class="val" id="cur-gas">--</div></div>
         </div>
 
-        <!-- Time Range Buttons -->
         <div class="controls">
             <button class="btn" onclick="setRange('hour', this)">1 Hour</button>
             <button class="btn active" onclick="setRange('day', this)">24 Hours</button>
@@ -84,16 +99,14 @@ HTML_TEMPLATE = """
     </div>
 
 <script>
-  // Config value from Python
     const use12h = {{ 'true' if use_12h else 'false' }};
-
-    // Format Strings definieren (für alle Units!)
     const fmtFull   = use12h ? 'MM/dd hh:mm aa' : 'dd.MM HH:mm';
     const fmtHour   = use12h ? 'hh:mm aa'       : 'HH:mm';
-    const fmtMinute = use12h ? 'hh:mm aa'       : 'HH:mm'; // Wichtig für Zoom!
+    const fmtMinute = use12h ? 'hh:mm aa'       : 'HH:mm';
     const fmtDay    = use12h ? 'MM/dd'          : 'dd.MM';
 
     let currentRange = 'day';
+    let currentDevice = ''; // Stores selected MAC address
 
     const commonOptions = {
         responsive: true, maintainAspectRatio: false,
@@ -102,12 +115,7 @@ HTML_TEMPLATE = """
                 type: 'time',
                 time: { 
                     tooltipFormat: fmtFull,
-                    // WICHTIG: Hier alle Units definieren
-                    displayFormats: { 
-                        minute: fmtMinute,
-                        hour: fmtHour, 
-                        day: fmtDay
-                    } 
+                    displayFormats: { minute: fmtMinute, hour: fmtHour, day: fmtDay } 
                 },
                 grid: { color: '#444' }, ticks: { color: '#aaa' }
             },
@@ -118,39 +126,72 @@ HTML_TEMPLATE = """
 
     let tempChart, humChart;
 
-    // Switch range function
+    // 1. Load Device List
+    async function loadDevices() {
+        try {
+            const res = await fetch('/api/devices');
+            const devices = await res.json();
+            const select = document.getElementById('deviceSelect');
+            select.innerHTML = '';
+            
+            if (devices.length === 0) {
+                select.innerHTML = '<option>No devices found</option>';
+                return;
+            }
+
+            devices.forEach(dev => {
+                const opt = document.createElement('option');
+                opt.value = dev;
+                opt.innerText = dev; // Shows MAC Address
+                select.appendChild(opt);
+            });
+            
+            // Select first device by default
+            if (!currentDevice && devices.length > 0) {
+                currentDevice = devices[0];
+            }
+            select.value = currentDevice;
+            loadData(); // Load data for this device
+        } catch(e) { console.error(e); }
+    }
+
+    function changeDevice() {
+        const select = document.getElementById('deviceSelect');
+        currentDevice = select.value;
+        loadData();
+    }
+
     function setRange(range, btnElement) {
         currentRange = range;
-        
-        // Update button styles
         document.querySelectorAll('.btn').forEach(b => b.classList.remove('active'));
         btnElement.classList.add('active');
-        
-        loadData(); // Reload data
+        loadData();
     }
 
     async function loadData() {
+        if (!currentDevice) return;
+
         try {
-            // Fetch data with range parameter
-            const response = await fetch('/api/history?range=' + currentRange);
+            // Fetch data filtered by device and range
+            const response = await fetch(`/api/history?range=${currentRange}&device_id=${currentDevice}`);
             const data = await response.json();
             
-            // UTC Fix: Append 'Z' to force UTC interpretation by browser
             const times = data.map(d => new Date(d.timestamp.replace(" ", "T") + "Z"));
             const temps = data.map(d => d.temperature);
             const hums = data.map(d => d.humidity);
             const gases = data.map(d => d.gas_resistance / 1000.0); 
 
-            // Update live values (always from the very last data point received)
             if (data.length > 0) {
                 const last = data[data.length - 1];
                 document.getElementById('cur-temp').innerText = last.temperature.toFixed(1) + " °C";
                 document.getElementById('cur-hum').innerText = last.humidity.toFixed(0) + " %";
                 document.getElementById('cur-pres').innerText = last.pressure.toFixed(0) + " hPa";
                 document.getElementById('cur-gas').innerText = (last.gas_resistance / 1000).toFixed(1);
+            } else {
+                // Reset if no data for range
+                document.getElementById('cur-temp').innerText = "--";
             }
 
-            // Draw Temperature Chart
             const ctxTemp = document.getElementById('tempChart').getContext('2d');
             if (tempChart) tempChart.destroy();
             tempChart = new Chart(ctxTemp, {
@@ -161,14 +202,12 @@ HTML_TEMPLATE = """
                         label: 'Temperature (°C)', data: temps,
                         borderColor: '#ff6384', backgroundColor: 'rgba(255, 99, 132, 0.2)',
                         borderWidth: 2, tension: 0.3, fill: true,
-                        // Show points only when zooming in (hour view)
                         pointRadius: currentRange === 'hour' ? 3 : 0 
                     }]
                 },
                 options: commonOptions
             });
 
-            // Draw Humidity/Gas Chart
             const ctxHum = document.getElementById('humChart').getContext('2d');
             if (humChart) humChart.destroy();
             humChart = new Chart(ctxHum, {
@@ -190,12 +229,11 @@ HTML_TEMPLATE = """
                 }
             });
 
-        } catch (err) {
-            console.error("Error loading data:", err);
-        }
+        } catch (err) { console.error(err); }
     }
 
-    loadData();
+    // Init
+    loadDevices();
     setInterval(loadData, 30000); 
 </script>
 </body>
@@ -206,79 +244,76 @@ HTML_TEMPLATE = """
 
 @app.route('/')
 def dashboard():
-    # Pass the config value to the template
     return render_template_string(HTML_TEMPLATE, use_12h=config.TIME_FORMAT_12H)
+
+# NEW: API to list all devices
+@app.route('/api/devices')
+def get_devices():
+    conn = get_db_connection()
+    # Find all distinct device_ids
+    devices = conn.execute("SELECT DISTINCT device_id FROM measurements WHERE device_id IS NOT NULL").fetchall()
+    conn.close()
+    device_list = [d['device_id'] for d in devices]
+    return jsonify(device_list)
 
 @app.route('/api/history')
 def get_history():
-    # Get range parameter, default to 'day'
     time_range = request.args.get('range', 'day')
+    device_id = request.args.get('device_id') # Filter by device
     
     conn = get_db_connection()
     
-    query = ""
+    # Base WHERE clause
+    where_clause = "WHERE 1=1"
+    params = []
     
-    # SQL Queries with Aggregation (Downsampling) for performance
-    if time_range == 'hour':
-        # Last hour, full resolution
-        query = """
-            SELECT timestamp, temperature, humidity, pressure, gas_resistance 
-            FROM measurements 
-            WHERE timestamp >= datetime('now', '-1 hour') 
-            ORDER BY timestamp ASC
-        """
+    # Add device filter
+    if device_id:
+        where_clause += " AND device_id = ?"
+        params.append(device_id)
         
-    elif time_range == 'day':
-        # Last 24 hours, full resolution
-        query = """
-            SELECT timestamp, temperature, humidity, pressure, gas_resistance 
-            FROM measurements 
-            WHERE timestamp >= datetime('now', '-24 hours') 
-            ORDER BY timestamp ASC
-        """
-        
-    elif time_range == 'week':
-        # Last 7 days, grouped by hour (Average)
-        query = """
+    # Time logic
+    time_filter = ""
+    if time_range == 'hour': time_filter = "AND timestamp >= datetime('now', '-1 hour')"
+    elif time_range == 'day': time_filter = "AND timestamp >= datetime('now', '-24 hours')"
+    elif time_range == 'week': time_filter = "AND timestamp >= datetime('now', '-7 days')"
+    elif time_range == 'month': time_filter = "AND timestamp >= datetime('now', '-1 month')"
+    
+    where_clause += f" {time_filter}"
+
+    # Build Query based on range (Aggregation)
+    query = ""
+    if time_range in ['week', 'month']:
+        # Grouped Query
+        query = f"""
             SELECT strftime('%Y-%m-%d %H:00:00', timestamp) as ts_group, 
                    AVG(temperature) as temperature, 
                    AVG(humidity) as humidity, 
                    AVG(pressure) as pressure, 
                    AVG(gas_resistance) as gas_resistance
             FROM measurements 
-            WHERE timestamp >= datetime('now', '-7 days') 
+            {where_clause}
             GROUP BY ts_group 
             ORDER BY ts_group ASC
         """
-        
-    elif time_range == 'month':
-        # Last 30 days, grouped by hour (Average)
-        query = """
-            SELECT strftime('%Y-%m-%d %H:00:00', timestamp) as ts_group, 
-                   AVG(temperature) as temperature, 
-                   AVG(humidity) as humidity, 
-                   AVG(pressure) as pressure, 
-                   AVG(gas_resistance) as gas_resistance
+    else:
+        # Full Resolution Query
+        query = f"""
+            SELECT timestamp, temperature, humidity, pressure, gas_resistance 
             FROM measurements 
-            WHERE timestamp >= datetime('now', '-1 month') 
-            GROUP BY strftime('%Y-%m-%d %H', timestamp) 
-            ORDER BY ts_group ASC
+            {where_clause}
+            ORDER BY timestamp ASC
         """
 
-    else: # Fallback
-        query = "SELECT * FROM measurements ORDER BY id DESC LIMIT 100"
-
     try:
-        cursor = conn.execute(query)
+        cursor = conn.execute(query, params)
         measurements = cursor.fetchall()
         conn.close()
         
         data = []
         for m in measurements:
-            # Handle different column names (timestamp vs ts_group)
             keys = m.keys()
             ts = m['timestamp'] if 'timestamp' in keys else m['ts_group']
-            
             data.append({
                 "timestamp": ts, 
                 "temperature": m['temperature'],
@@ -287,7 +322,6 @@ def get_history():
                 "gas_resistance": m['gas_resistance']
             })
         return jsonify(data)
-        
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -299,6 +333,7 @@ def post_data():
         return jsonify({"status": "error", "message": "Invalid API Key"}), 403
 
     try:
+        device_id = request.form.get('device_id', 'unknown') # Default to 'unknown' if missing
         temp = float(request.form.get('temperature'))
         hum = float(request.form.get('humidity'))
         pres = float(request.form.get('pressure'))
@@ -306,12 +341,12 @@ def post_data():
         
         conn = get_db_connection()
         c = conn.cursor()
-        c.execute("INSERT INTO measurements (temperature, humidity, pressure, gas_resistance) VALUES (?, ?, ?, ?)",
-                  (temp, hum, pres, gas))
+        c.execute("INSERT INTO measurements (timestamp, device_id, temperature, humidity, pressure, gas_resistance) VALUES (CURRENT_TIMESTAMP, ?, ?, ?, ?, ?)",
+                  (device_id, temp, hum, pres, gas))
         conn.commit()
         conn.close()
         
-        print(f"[{datetime.datetime.now()}] Saved: {temp}°C")
+        print(f"[{datetime.datetime.now()}] Saved from {device_id}: {temp}°C")
         return jsonify({"status": "success"}), 200
 
     except Exception as e:
