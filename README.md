@@ -354,7 +354,7 @@ Built with the following third-party libraries:
 
 
 
-Hardware documentation references:
+### Hardware documentation references:
 
 * ESP32-C3 SuperMini pinout[^9][^1][^3]
 * AM2301A/DHT21 specifications[^5][^4][^10]
