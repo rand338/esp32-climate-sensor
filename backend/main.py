@@ -41,13 +41,20 @@ HTML_TEMPLATE = """
         body { font-family: 'Segoe UI', sans-serif; background: #1a1a1a; color: #eee; margin: 0; padding: 20px; }
         .container { max-width: 1000px; margin: 0 auto; }
         h1 { color: #03a9f4; text-align: center; }
+        
+        /* New Button Bar */
+        .controls { text-align: center; margin-bottom: 20px; }
+        .btn { 
+            background: #333; color: #eee; border: 1px solid #555; 
+            padding: 8px 16px; margin: 0 5px; cursor: pointer; border-radius: 4px; 
+            transition: background 0.3s;
+        }
+        .btn:hover { background: #444; }
+        .btn.active { background: #03a9f4; border-color: #03a9f4; color: #fff; }
+
         .chart-container { 
-            background: #2a2a2a; 
-            border-radius: 12px; 
-            padding: 15px; 
-            margin-bottom: 20px; 
-            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
-            height: 300px;
+            background: #2a2a2a; border-radius: 12px; padding: 15px; 
+            margin-bottom: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.3); height: 300px;
         }
         .stats-row { display: flex; justify-content: space-around; margin-bottom: 20px; flex-wrap: wrap; }
         .card { background: #333; padding: 15px; border-radius: 8px; text-align: center; width: 140px; margin: 5px; border-top: 3px solid #777; }
@@ -60,72 +67,73 @@ HTML_TEMPLATE = """
         <h1>Server History</h1>
         
         <div class="stats-row">
-            <div class="card" style="border-color: #ff6384">
-                <div class="label">Temperature</div>
-                <div class="val" id="cur-temp">--</div>
-            </div>
-            <div class="card" style="border-color: #36a2eb">
-                <div class="label">Humidity</div>
-                <div class="val" id="cur-hum">--</div>
-            </div>
-            <div class="card" style="border-color: #4bc0c0">
-                <div class="label">Pressure</div>
-                <div class="val" id="cur-pres">--</div>
-            </div>
-             <div class="card" style="border-color: #ffcd56">
-                <div class="label">Gas (kOhm)</div>
-                <div class="val" id="cur-gas">--</div>
-            </div>
+            <div class="card" style="border-color: #ff6384"><div class="label">Temperature</div><div class="val" id="cur-temp">--</div></div>
+            <div class="card" style="border-color: #36a2eb"><div class="label">Humidity</div><div class="val" id="cur-hum">--</div></div>
+            <div class="card" style="border-color: #4bc0c0"><div class="label">Pressure</div><div class="val" id="cur-pres">--</div></div>
+            <div class="card" style="border-color: #ffcd56"><div class="label">Gas (kOhm)</div><div class="val" id="cur-gas">--</div></div>
         </div>
 
-        <div class="chart-container">
-            <canvas id="tempChart"></canvas>
+        <!-- Time Range Buttons -->
+        <div class="controls">
+            <button class="btn" onclick="setRange('hour', this)">1 Hour</button>
+            <button class="btn active" onclick="setRange('day', this)">24 Hours</button>
+            <button class="btn" onclick="setRange('week', this)">7 Days</button>
+            <button class="btn" onclick="setRange('month', this)">30 Days</button>
         </div>
-        <div class="chart-container">
-            <canvas id="humChart"></canvas>
-        </div>
+
+        <div class="chart-container"><canvas id="tempChart"></canvas></div>
+        <div class="chart-container"><canvas id="humChart"></canvas></div>
     </div>
 
 <script>
+    // Global variable for current time range
+    let currentRange = 'day';
+
     const commonOptions = {
-        responsive: true,
-        maintainAspectRatio: false,
+        responsive: true, maintainAspectRatio: false,
         scales: {
             x: {
                 type: 'time',
                 time: { 
-                    unit: 'minute', 
-                    displayFormats: { minute: 'HH:mm' },
-                    tooltipFormat: 'HH:mm:ss' 
+                    tooltipFormat: 'dd.MM HH:mm',
+                    displayFormats: { 
+                        hour: 'HH:mm', 
+                        day: 'dd.MM' 
+                    } 
                 },
-                grid: { color: '#444' },
-                ticks: { color: '#aaa' }
+                grid: { color: '#444' }, ticks: { color: '#aaa' }
             },
-            y: {
-                grid: { color: '#444' },
-                ticks: { color: '#aaa' }
-            }
+            y: { grid: { color: '#444' }, ticks: { color: '#aaa' } }
         },
         plugins: { legend: { labels: { color: '#eee' } } }
     };
 
     let tempChart, humChart;
 
+    // Switch range function
+    function setRange(range, btnElement) {
+        currentRange = range;
+        
+        // Update button styles
+        document.querySelectorAll('.btn').forEach(b => b.classList.remove('active'));
+        btnElement.classList.add('active');
+        
+        loadData(); // Reload data
+    }
+
     async function loadData() {
         try {
-            const response = await fetch('/api/history');
+            // Fetch data with range parameter
+            const response = await fetch('/api/history?range=' + currentRange);
             const data = await response.json();
             
-            // FIX: Convert UTC database string to Javascript Date object correctly
-            // Example DB string: "2026-01-12 00:30:00" -> "2026-01-12T00:30:00Z"
-            // This forces the browser to interpret it as UTC and convert to local time.
+            // UTC Fix: Append 'Z' to force UTC interpretation by browser
             const times = data.map(d => new Date(d.timestamp.replace(" ", "T") + "Z"));
-            
             const temps = data.map(d => d.temperature);
             const hums = data.map(d => d.humidity);
-            const press = data.map(d => d.pressure);
             const gases = data.map(d => d.gas_resistance / 1000.0); 
 
+            // Update live values (always from the very last data point received)
             if (data.length > 0) {
                 const last = data[data.length - 1];
                 document.getElementById('cur-temp').innerText = last.temperature.toFixed(1) + " °C";
@@ -134,6 +142,7 @@ HTML_TEMPLATE = """
                 document.getElementById('cur-gas').innerText = (last.gas_resistance / 1000).toFixed(1);
             }
 
+            // Draw Temperature Chart
             const ctxTemp = document.getElementById('tempChart').getContext('2d');
             if (tempChart) tempChart.destroy();
             tempChart = new Chart(ctxTemp, {
@@ -141,18 +150,17 @@ HTML_TEMPLATE = """
                 data: {
                     labels: times,
                     datasets: [{
-                        label: 'Temperature (°C)',
-                        data: temps,
-                        borderColor: '#ff6384',
-                        backgroundColor: 'rgba(255, 99, 132, 0.2)',
-                        borderWidth: 2,
-                        tension: 0.3,
-                        fill: true
+                        label: 'Temperature (°C)', data: temps,
+                        borderColor: '#ff6384', backgroundColor: 'rgba(255, 99, 132, 0.2)',
+                        borderWidth: 2, tension: 0.3, fill: true,
+                        // Show points only when zooming in (hour view)
+                        pointRadius: currentRange === 'hour' ? 3 : 0 
                     }]
                 },
                 options: commonOptions
             });
 
+            // Draw Humidity/Gas Chart
             const ctxHum = document.getElementById('humChart').getContext('2d');
             if (humChart) humChart.destroy();
             humChart = new Chart(ctxHum, {
@@ -160,20 +168,8 @@ HTML_TEMPLATE = """
                 data: {
                     labels: times,
                     datasets: [
-                        {
-                            label: 'Humidity (%)',
-                            data: hums,
-                            borderColor: '#36a2eb',
-                            borderWidth: 2,
-                            yAxisID: 'y'
-                        },
-                        {
-                            label: 'Air Quality (kOhm)',
-                            data: gases,
-                            borderColor: '#ffcd56',
-                            borderWidth: 2,
-                            yAxisID: 'y1'
-                        }
+                        { label: 'Humidity (%)', data: hums, borderColor: '#36a2eb', borderWidth: 2, yAxisID: 'y', pointRadius: 0 },
+                        { label: 'Air Quality (kOhm)', data: gases, borderColor: '#ffcd56', borderWidth: 2, yAxisID: 'y1', pointRadius: 0 }
                     ]
                 },
                 options: {
@@ -192,7 +188,7 @@ HTML_TEMPLATE = """
     }
 
     loadData();
-    setInterval(loadData, 10000); // Update frontend every 10 seconds to catch new data quickly
+    setInterval(loadData, 30000); 
 </script>
 </body>
 </html>
@@ -206,27 +202,93 @@ def dashboard():
 
 @app.route('/api/history')
 def get_history():
-    # Fetch last 50 entries
-    conn = get_db_connection()
-    measurements = conn.execute('SELECT * FROM (SELECT * FROM measurements ORDER BY id DESC LIMIT 50) ORDER BY id ASC').fetchall()
-    conn.close()
+    # Get range parameter, default to 'day'
+    time_range = request.args.get('range', 'day')
     
-    data = []
-    for m in measurements:
-        data.append({
-            "timestamp": m['timestamp'], 
-            "temperature": m['temperature'],
-            "humidity": m['humidity'],
-            "pressure": m['pressure'],
-            "gas_resistance": m['gas_resistance']
-        })
-    return jsonify(data)
+    conn = get_db_connection()
+    
+    query = ""
+    
+    # SQL Queries with Aggregation (Downsampling) for performance
+    if time_range == 'hour':
+        # Last hour, full resolution
+        query = """
+            SELECT timestamp, temperature, humidity, pressure, gas_resistance 
+            FROM measurements 
+            WHERE timestamp >= datetime('now', '-1 hour') 
+            ORDER BY timestamp ASC
+        """
+        
+    elif time_range == 'day':
+        # Last 24 hours, full resolution
+        query = """
+            SELECT timestamp, temperature, humidity, pressure, gas_resistance 
+            FROM measurements 
+            WHERE timestamp >= datetime('now', '-24 hours') 
+            ORDER BY timestamp ASC
+        """
+        
+    elif time_range == 'week':
+        # Last 7 days, grouped by hour (Average)
+        query = """
+            SELECT strftime('%Y-%m-%d %H:00:00', timestamp) as ts_group, 
+                   AVG(temperature) as temperature, 
+                   AVG(humidity) as humidity, 
+                   AVG(pressure) as pressure, 
+                   AVG(gas_resistance) as gas_resistance
+            FROM measurements 
+            WHERE timestamp >= datetime('now', '-7 days') 
+            GROUP BY ts_group 
+            ORDER BY ts_group ASC
+        """
+        
+    elif time_range == 'month':
+        # Last 30 days, grouped by 4-hour blocks (approximated by hour here for simplicity or day)
+        # Using grouping by hour to keep reasonable resolution
+        query = """
+            SELECT strftime('%Y-%m-%d %H:00:00', timestamp) as ts_group, 
+                   AVG(temperature) as temperature, 
+                   AVG(humidity) as humidity, 
+                   AVG(pressure) as pressure, 
+                   AVG(gas_resistance) as gas_resistance
+            FROM measurements 
+            WHERE timestamp >= datetime('now', '-1 month') 
+            GROUP BY strftime('%Y-%m-%d %H', timestamp) 
+            ORDER BY ts_group ASC
+        """
+
+    else: # Fallback
+        # Fallback to day view
+        query = "SELECT * FROM measurements ORDER BY id DESC LIMIT 100"
+
+    try:
+        cursor = conn.execute(query)
+        measurements = cursor.fetchall()
+        conn.close()
+        
+        data = []
+        for m in measurements:
+            # Handle different column names (timestamp vs ts_group)
+            # SQLite fetchall returns rows that act like dicts thanks to row_factory
+            keys = m.keys()
+            ts = m['timestamp'] if 'timestamp' in keys else m['ts_group']
+            
+            data.append({
+                "timestamp": ts, 
+                "temperature": m['temperature'],
+                "humidity": m['humidity'],
+                "pressure": m['pressure'],
+                "gas_resistance": m['gas_resistance']
+            })
+        return jsonify(data)
+        
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 @app.route('/post-data', methods=['POST'])
 def post_data():
     received_key = request.form.get('api_key')
     
-    # Check API key from config
     if received_key != config.API_KEY:
         return jsonify({"status": "error", "message": "Invalid API Key"}), 403
 
@@ -250,5 +312,4 @@ def post_data():
         return jsonify({"status": "error", "message": str(e)}), 400
 
 if __name__ == '__main__':
-    # Start server using settings from config.py
     app.run(host=config.HOST, port=config.PORT, debug=config.DEBUG)
