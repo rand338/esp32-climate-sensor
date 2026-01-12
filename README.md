@@ -1,4 +1,5 @@
-<img width="1111" height="953" alt="shot_11-01-2026_004" src="https://github.com/user-attachments/assets/6614a44b-57d3-4ec5-a5a2-6682ae32aef6" />
+
+<img width="1135" height="956" alt="shot_12-01-2026" src="https://github.com/user-attachments/assets/32e5e8bc-c472-40ff-a895-3c2cccf292af" />
 
 
 # ESP32 Environment Monitor (IoT)
