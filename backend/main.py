@@ -1,12 +1,9 @@
 from flask import Flask, request, jsonify, render_template_string
 import sqlite3
 import datetime
-# NEW: Import Configuration
 import config 
 
-
 app = Flask(__name__)
-
 
 # --- DATABASE ---
 def get_db_connection():
@@ -14,7 +11,6 @@ def get_db_connection():
     conn = sqlite3.connect(config.DB_NAME)
     conn.row_factory = sqlite3.Row 
     return conn
-
 
 def init_db():
     conn = get_db_connection()
@@ -30,9 +26,7 @@ def init_db():
     conn.commit()
     conn.close()
 
-
 init_db()
-
 
 # --- HTML TEMPLATE (Frontend) ---
 HTML_TEMPLATE = """
@@ -84,7 +78,6 @@ HTML_TEMPLATE = """
             </div>
         </div>
 
-
         <div class="chart-container">
             <canvas id="tempChart"></canvas>
         </div>
@@ -93,7 +86,6 @@ HTML_TEMPLATE = """
         </div>
     </div>
 
-
 <script>
     const commonOptions = {
         responsive: true,
@@ -101,7 +93,11 @@ HTML_TEMPLATE = """
         scales: {
             x: {
                 type: 'time',
-                time: { unit: 'minute', displayFormats: { minute: 'HH:mm' } },
+                time: { 
+                    unit: 'minute', 
+                    displayFormats: { minute: 'HH:mm' },
+                    tooltipFormat: 'HH:mm:ss' 
+                },
                 grid: { color: '#444' },
                 ticks: { color: '#aaa' }
             },
@@ -113,21 +109,22 @@ HTML_TEMPLATE = """
         plugins: { legend: { labels: { color: '#eee' } } }
     };
 
-
     let tempChart, humChart;
-
 
     async function loadData() {
         try {
             const response = await fetch('/api/history');
             const data = await response.json();
             
-            const times = data.map(d => new Date(d.timestamp));
+            // FIX: Convert UTC database string to Javascript Date object correctly
+            // Example DB string: "2026-01-12 00:30:00" -> "2026-01-12T00:30:00Z"
+            // This forces the browser to interpret it as UTC and convert to local time.
+            const times = data.map(d => new Date(d.timestamp.replace(" ", "T") + "Z"));
+            
             const temps = data.map(d => d.temperature);
             const hums = data.map(d => d.humidity);
             const press = data.map(d => d.pressure);
             const gases = data.map(d => d.gas_resistance / 1000.0); 
-
 
             if (data.length > 0) {
                 const last = data[data.length - 1];
@@ -136,7 +133,6 @@ HTML_TEMPLATE = """
                 document.getElementById('cur-pres').innerText = last.pressure.toFixed(0) + " hPa";
                 document.getElementById('cur-gas').innerText = (last.gas_resistance / 1000).toFixed(1);
             }
-
 
             const ctxTemp = document.getElementById('tempChart').getContext('2d');
             if (tempChart) tempChart.destroy();
@@ -156,7 +152,6 @@ HTML_TEMPLATE = """
                 },
                 options: commonOptions
             });
-
 
             const ctxHum = document.getElementById('humChart').getContext('2d');
             if (humChart) humChart.destroy();
@@ -191,28 +186,23 @@ HTML_TEMPLATE = """
                 }
             });
 
-
         } catch (err) {
             console.error("Error loading data:", err);
         }
     }
 
-
     loadData();
-    setInterval(loadData, 30000); 
+    setInterval(loadData, 10000); // Update frontend every 10 seconds to catch new data quickly
 </script>
 </body>
 </html>
 """
 
-
 # --- ROUTES ---
-
 
 @app.route('/')
 def dashboard():
     return render_template_string(HTML_TEMPLATE)
-
 
 @app.route('/api/history')
 def get_history():
@@ -232,7 +222,6 @@ def get_history():
         })
     return jsonify(data)
 
-
 @app.route('/post-data', methods=['POST'])
 def post_data():
     received_key = request.form.get('api_key')
@@ -240,7 +229,6 @@ def post_data():
     # Check API key from config
     if received_key != config.API_KEY:
         return jsonify({"status": "error", "message": "Invalid API Key"}), 403
-
 
     try:
         temp = float(request.form.get('temperature'))
@@ -258,10 +246,8 @@ def post_data():
         print(f"[{datetime.datetime.now()}] Saved: {temp}°C")
         return jsonify({"status": "success"}), 200
 
-
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 400
-
 
 if __name__ == '__main__':
     # Start server using settings from config.py
