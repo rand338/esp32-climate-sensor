@@ -3,6 +3,7 @@
 #include <WiFiManager.h> 
 #include <AsyncTCP.h>
 
+// Fix for conflicting definitions between ESP32 Core WebServer and AsyncWebServer
 #ifdef HTTP_GET
   #undef HTTP_GET
   #undef HTTP_POST
@@ -23,28 +24,33 @@
 #include "time.h" 
 #include "config.h" 
 
-// --- DISPLAY INCLUDES NUR WENN NÖTIG ---
+
+// --- DISPLAY INCLUDES ONLY IF NEEDED ---
 #ifdef USE_DISPLAY
   #include <Adafruit_GFX.h>
   #include <Adafruit_SSD1306.h>
-  // OLED Objekt
+  // OLED Object
   Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, PIN_OLED_RST);
 #endif
 
-// --- SENSOR SETUP (Flexibel) ---
-// Wählt je nach Config Bus 0 oder 1
+
+// --- SENSOR SETUP (Flexible) ---
+// Selects Bus 0 or 1 depending on config
 TwoWire I2C_BME = TwoWire(BME_I2C_BUS);
 Adafruit_BME680 bme(&I2C_BME);
 
+
 AsyncWebServer server(80);
 
-// Variablen
+
+// Variables
 float temp = 0.0, hum = 0.0, pres = 0.0, gas = 0.0;
 String airQualityStatus = "Init..."; 
 unsigned long lastSensorTime = 0;
 unsigned long lastSendTime = 0;
 
-// Hilfsfunktion: Display Text (nur wenn Display da)
+
+// Helper function: Display Text (only if display exists)
 void showText(String title, String status) {
   #ifdef USE_DISPLAY
     display.clearDisplay();
@@ -54,17 +60,18 @@ void showText(String title, String status) {
     display.println(status);
     display.display();
   #else
-    // Fallback auf Serial wenn kein Display
+    // Fallback to Serial if no display
     Serial.print("[INFO] "); Serial.print(title); Serial.print(": "); Serial.println(status);
   #endif
 }
+
 
 void configModeCallback (WiFiManager *myWiFiManager) {
   Serial.println("Config Mode Start...");
   #ifdef USE_DISPLAY
     display.clearDisplay();
     display.setCursor(0, 0);
-    display.println("WLAN FEHLER!");
+    display.println("WIFI ERROR!");
     display.println("Connect to:");
     display.println(myWiFiManager->getConfigPortalSSID());
     display.println("192.168.4.1");
@@ -72,13 +79,15 @@ void configModeCallback (WiFiManager *myWiFiManager) {
   #endif
 }
 
+
 String getAirQuality(float gasResistance) {
   if (gasResistance > GAS_LEVEL_GOOD) return "Top";
-  else if (gasResistance > GAS_LEVEL_OK) return "Gut";
-  else if (gasResistance > GAS_LEVEL_WARN) return "Bedenklich";
-  else if (gasResistance > 0) return "WARNUNG";
+  else if (gasResistance > GAS_LEVEL_OK) return "Good";
+  else if (gasResistance > GAS_LEVEL_WARN) return "Fair"; // or "Concern"
+  else if (gasResistance > 0) return "WARNING";
   return "Init";
 }
+
 
 String getFormattedTime() {
   struct tm timeinfo;
@@ -87,6 +96,7 @@ String getFormattedTime() {
   strftime(timeStringBuff, sizeof(timeStringBuff), "%H:%M", &timeinfo);
   return String(timeStringBuff);
 }
+
 
 void sendDataToServer() {
   if(WiFi.status() == WL_CONNECTED){
@@ -106,14 +116,15 @@ void sendDataToServer() {
   }
 }
 
-// --- HTML (Bleibt immer gleich) ---
+
+// --- HTML (Translated) ---
 const char index_html[] PROGMEM = R"rawliteral(
-<!DOCTYPE HTML><html><head><title>Klima</title>
+<!DOCTYPE HTML><html><head><title>Climate Monitor</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>body{font-family:sans-serif;text-align:center;background:#121212;color:#eee;margin:0;padding-top:20px}
 .c{background:#1e1e1e;padding:15px;margin:10px;width:140px;border-radius:12px;border-top:3px solid #777;display:inline-block}
 .v{font-size:2rem;font-weight:bold}.u{font-size:1rem;color:#888}</style></head><body>
-<h1>Raumklima</h1><div class="c" style="width:300px;border-top:5px solid #fff"><h2 style="margin:0;color:#aaa">Luft</h2><span id="q" style="font-size:1.5rem">...</span></div><br>
+<h1>Room Climate</h1><div class="c" style="width:300px;border-top:5px solid #fff"><h2 style="margin:0;color:#aaa">Air Quality</h2><span id="q" style="font-size:1.5rem">...</span></div><br>
 <div class="c" style="border-color:#ff5252"><span class="v" id="t">--</span><span class="u"> C</span></div>
 <div class="c" style="border-color:#448aff"><span class="v" id="h">--</span><span class="u"> %</span></div>
 <div class="c" style="border-color:#69f0ae"><span class="v" id="p">--</span><span class="u"> hPa</span></div>
@@ -121,15 +132,21 @@ const char index_html[] PROGMEM = R"rawliteral(
 <script>setInterval(function(){fetch("/data").then(r=>r.json()).then(d=>{
 document.getElementById("t").innerText=d.t.toFixed(1);document.getElementById("h").innerText=d.h.toFixed(1);
 document.getElementById("p").innerText=d.p.toFixed(0);document.getElementById("g").innerText=(d.g/1000).toFixed(1);
-const q=document.getElementById("q");q.innerText=d.q;q.style.color=d.q.includes("Top")?"#00e676":d.q.includes("Bed")?"#ffeb3b":"#ff1744";
+const q=document.getElementById("q");q.innerText=d.q;
+// Check for English keywords in air quality status
+if(d.q.includes("Top")||d.q.includes("Good")){q.style.color="#00e676"}
+else if(d.q.includes("Fair")){q.style.color="#ffeb3b"}
+else{q.style.color="#ff1744"}
 })},2000);</script></body></html>)rawliteral";
+
 
 void setup() {
   Serial.begin(115200);
   delay(1000);
   Serial.println("\n--- SYSTEM START ---");
 
-  // --- 1. DISPLAY INIT (Bedingt) ---
+
+  // --- 1. DISPLAY INIT (Conditional) ---
   #ifdef USE_DISPLAY
     Serial.println("Init Display...");
     pinMode(PIN_OLED_RST, OUTPUT);
@@ -140,11 +157,13 @@ void setup() {
     }
   #endif
 
+
   showText("Booting...", "Init Sensors");
+
 
   // --- 2. SENSOR INIT ---
   Serial.println("Init BME680...");
-  // Startet den konfigurierten Bus (0 oder 1)
+  // Starts the configured Bus (0 or 1)
   I2C_BME.begin(PIN_BME_SDA, PIN_BME_SCL); 
   
   if (!bme.begin(0x77)) {
@@ -161,14 +180,15 @@ void setup() {
       bme.setGasHeater(320, 150);
   }
 
+
   // --- 3. WIFI ---
   WiFiManager wm;
   wm.setAPCallback(configModeCallback);
   wm.setConfigPortalTimeout(180);
   
-  showText("WLAN...", "Connecting");
+  showText("WiFi...", "Connecting");
   
-  if(!wm.autoConnect("Klima-Setup", "password")) {
+  if(!wm.autoConnect("Climate-Setup", "password")) {
     showText("OFFLINE", "Mode Active");
   } else {
     String ip = WiFi.localIP().toString();
@@ -176,11 +196,13 @@ void setup() {
     configTime(GMT_OFFSET_SEC, DST_OFFSET_SEC, NTP_SERVER_1, NTP_SERVER_2);
   }
 
+
   // --- 4. OTA ---
   ArduinoOTA.setHostname(OTA_HOSTNAME);
   ArduinoOTA.setPassword(OTA_PASS);
   ArduinoOTA.onStart([]() { showText("OTA UPDATE", "Receiving..."); });
   ArduinoOTA.begin();
+
 
   // --- 5. SERVER ---
   if(WiFi.status() == WL_CONNECTED) {
@@ -199,10 +221,13 @@ void setup() {
   }
 }
 
+
 void loop() {
   ArduinoOTA.handle(); 
 
+
   unsigned long currentMillis = millis();
+
 
   if ((currentMillis - lastSensorTime) > UPDATE_INTERVAL) {
     if (bme.performReading()) {
@@ -212,7 +237,8 @@ void loop() {
       gas = bme.gas_resistance;
       airQualityStatus = getAirQuality(gas);
 
-      // --- ANZEIGE UPDATE ---
+
+      // --- DISPLAY UPDATE ---
       #ifdef USE_DISPLAY
         display.clearDisplay();
         
@@ -229,28 +255,29 @@ void loop() {
         }
         display.drawLine(0, 9, 128, 9, WHITE);
         
-        // Werte
+        // Values
         display.setCursor(0,15); display.printf("T: %.1f C", temp);
         display.setCursor(0,25); display.printf("H: %.0f %%", hum);
         display.setCursor(0,35); display.printf("P: %.0f", pres);
         display.setCursor(0,50); display.println(airQualityStatus);
         
-        // Box Rechts
+        // Box Right
         display.drawRect(70, 15, 58, 30, WHITE);
         display.setCursor(74, 23); 
         if(airQualityStatus.startsWith("Top")) display.print("TOP");
-        else if(airQualityStatus.startsWith("Gut")) display.print("GUT");
-        else if(airQualityStatus.startsWith("Bed")) display.print("NAJA");
+        else if(airQualityStatus.startsWith("Good")) display.print("GOOD");
+        else if(airQualityStatus.startsWith("Fair")) display.print("FAIR");
         else display.print("BAD");
         
         display.display();
       #else
-        // Debug Ausgabe für Non-Display Variante
+        // Debug output for Non-Display variant
         Serial.printf("T:%.1f H:%.0f P:%.0f G:%.0f (%s)\n", temp, hum, pres, gas, airQualityStatus.c_str());
       #endif
     }
     lastSensorTime = currentMillis;
   }
+
 
   if ((currentMillis - lastSendTime) > SEND_INTERVAL) {
     sendDataToServer();
