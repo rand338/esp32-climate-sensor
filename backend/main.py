@@ -14,7 +14,6 @@ def get_db_connection():
 def init_db():
     conn = get_db_connection()
     c = conn.cursor()
-    # Updated Schema with device_id
     c.execute('''CREATE TABLE IF NOT EXISTS measurements
                  (id INTEGER PRIMARY KEY AUTOINCREMENT, 
                   timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -49,6 +48,7 @@ HTML_TEMPLATE = """
             padding: 8px 16px; font-size: 1rem; border-radius: 4px; 
         }
 
+        /* Controls */
         .controls { text-align: center; margin-bottom: 20px; }
         .btn { 
             background: #333; color: #eee; border: 1px solid #555; 
@@ -58,33 +58,53 @@ HTML_TEMPLATE = """
         .btn:hover { background: #444; }
         .btn.active { background: #03a9f4; border-color: #03a9f4; color: #fff; }
 
-        .chart-container { 
-            background: #2a2a2a; border-radius: 12px; padding: 15px; 
-            margin-bottom: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.3); height: 300px;
+        /* Stats Cards - Getrennt & Flexibel */
+        .stats-row { display: flex; justify-content: center; margin-bottom: 20px; flex-wrap: wrap; gap: 15px; }
+        .card { 
+            background: #333; padding: 15px; border-radius: 8px; text-align: center; 
+            width: 140px; border-top: 3px solid #777; 
+            /* Temp/Hum sind immer sichtbar, andere hidden by default */
         }
-        .stats-row { display: flex; justify-content: space-around; margin-bottom: 20px; flex-wrap: wrap; }
-        .card { background: #333; padding: 15px; border-radius: 8px; text-align: center; width: 140px; margin: 5px; border-top: 3px solid #777; }
+        .card-hidden { display: none; } 
         .val { font-size: 1.8rem; font-weight: bold; }
         .label { color: #aaa; font-size: 0.9rem; }
+
+        /* Chart Containers */
+        .chart-wrapper { margin-bottom: 30px; } 
+        .chart-wrapper-hidden { display: none; }
+        .chart-container { 
+            background: #2a2a2a; border-radius: 12px; padding: 15px; 
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3); height: 300px;
+        }
+        h3.chart-title { margin: 0 0 10px 10px; font-size: 1rem; color: #bbb; }
     </style>
 </head>
 <body>
     <div class="container">
         <h1>Climate Dashboard</h1>
         
-        <!-- Device Selector -->
         <div class="device-selector">
             <label for="deviceSelect">Sensor: </label>
-            <select id="deviceSelect" onchange="changeDevice()">
-                <option value="">Loading...</option>
-            </select>
+            <select id="deviceSelect" onchange="changeDevice()"><option value="">Loading...</option></select>
         </div>
 
+        <!-- 1. Kacheln (Alle getrennt) -->
         <div class="stats-row">
-            <div class="card" style="border-color: #ff6384"><div class="label">Temperature</div><div class="val" id="cur-temp">--</div></div>
-            <div class="card" style="border-color: #36a2eb"><div class="label">Humidity</div><div class="val" id="cur-hum">--</div></div>
-            <div class="card" style="border-color: #4bc0c0"><div class="label">Pressure</div><div class="val" id="cur-pres">--</div></div>
-            <div class="card" style="border-color: #ffcd56"><div class="label">Gas (kOhm)</div><div class="val" id="cur-gas">--</div></div>
+            <!-- Immer sichtbar -->
+            <div class="card" style="border-color: #ff6384">
+                <div class="label">Temperature</div><div class="val" id="cur-temp">--</div>
+            </div>
+            <div class="card" style="border-color: #36a2eb">
+                <div class="label">Humidity</div><div class="val" id="cur-hum">--</div>
+            </div>
+            
+            <!-- Optional sichtbar -->
+            <div id="card-pres" class="card card-hidden" style="border-color: #4bc0c0">
+                <div class="label">Pressure</div><div class="val" id="cur-pres">--</div>
+            </div>
+            <div id="card-gas" class="card card-hidden" style="border-color: #ffcd56">
+                <div class="label">Air Quality</div><div class="val" id="cur-gas">--</div>
+            </div>
         </div>
 
         <div class="controls">
@@ -94,39 +114,38 @@ HTML_TEMPLATE = """
             <button class="btn" onclick="setRange('month', this)">30 Days</button>
         </div>
 
-        <div class="chart-container"><canvas id="tempChart"></canvas></div>
-        <div class="chart-container"><canvas id="humChart"></canvas></div>
+        <!-- 2. Charts -->
+        
+        <!-- Main Chart: Temp + Hum (Combined) -->
+        <div class="chart-wrapper">
+            <h3 class="chart-title">Climate Overview (Temp & Humidity)</h3>
+            <div class="chart-container"><canvas id="tempHumChart"></canvas></div>
+        </div>
+
+        <!-- Pressure Chart (Optional) -->
+        <div id="wrap-pres" class="chart-wrapper chart-wrapper-hidden">
+            <h3 class="chart-title">Atmospheric Pressure (hPa)</h3>
+            <div class="chart-container"><canvas id="presChart"></canvas></div>
+        </div>
+
+        <!-- Gas Chart (Optional) -->
+        <div id="wrap-gas" class="chart-wrapper chart-wrapper-hidden">
+            <h3 class="chart-title">Air Quality (Gas Resistance)</h3>
+            <div class="chart-container"><canvas id="gasChart"></canvas></div>
+        </div>
     </div>
 
 <script>
     const use12h = {{ 'true' if use_12h else 'false' }};
-    const fmtFull   = use12h ? 'MM/dd hh:mm aa' : 'dd.MM HH:mm';
-    const fmtHour   = use12h ? 'hh:mm aa'       : 'HH:mm';
-    const fmtMinute = use12h ? 'hh:mm aa'       : 'HH:mm';
-    const fmtDay    = use12h ? 'MM/dd'          : 'dd.MM';
+    const fmtFull = use12h ? 'MM/dd hh:mm aa' : 'dd.MM HH:mm';
+    const fmtHour = use12h ? 'hh:mm aa' : 'HH:mm';
+    const fmtDay  = use12h ? 'MM/dd' : 'dd.MM';
 
     let currentRange = 'day';
-    let currentDevice = ''; // Stores selected MAC address
+    let currentDevice = ''; 
+    let charts = { main: null, pres: null, gas: null };
 
-    const commonOptions = {
-        responsive: true, maintainAspectRatio: false,
-        scales: {
-            x: {
-                type: 'time',
-                time: { 
-                    tooltipFormat: fmtFull,
-                    displayFormats: { minute: fmtMinute, hour: fmtHour, day: fmtDay } 
-                },
-                grid: { color: '#444' }, ticks: { color: '#aaa' }
-            },
-            y: { grid: { color: '#444' }, ticks: { color: '#aaa' } }
-        },
-        plugins: { legend: { labels: { color: '#eee' } } }
-    };
-
-    let tempChart, humChart;
-
-    // 1. Load Device List
+    // Init
     async function loadDevices() {
         try {
             const res = await fetch('/api/devices');
@@ -134,33 +153,21 @@ HTML_TEMPLATE = """
             const select = document.getElementById('deviceSelect');
             select.innerHTML = '';
             
-            if (devices.length === 0) {
-                select.innerHTML = '<option>No devices found</option>';
-                return;
-            }
-
+            if (devices.length === 0) { select.innerHTML = '<option>No devices found</option>'; return; }
+            
             devices.forEach(dev => {
                 const opt = document.createElement('option');
-                opt.value = dev;
-                opt.innerText = dev; // Shows MAC Address
-                select.appendChild(opt);
+                opt.value = dev; opt.innerText = dev; select.appendChild(opt);
             });
             
-            // Select first device by default
-            if (!currentDevice && devices.length > 0) {
-                currentDevice = devices[0];
-            }
+            if (!currentDevice && devices.length > 0) currentDevice = devices[0];
             select.value = currentDevice;
-            loadData(); // Load data for this device
+            loadData(); 
         } catch(e) { console.error(e); }
     }
 
-    function changeDevice() {
-        const select = document.getElementById('deviceSelect');
-        currentDevice = select.value;
-        loadData();
-    }
-
+    function changeDevice() { currentDevice = document.getElementById('deviceSelect').value; loadData(); }
+    
     function setRange(range, btnElement) {
         currentRange = range;
         document.querySelectorAll('.btn').forEach(b => b.classList.remove('active'));
@@ -172,67 +179,117 @@ HTML_TEMPLATE = """
         if (!currentDevice) return;
 
         try {
-            // Fetch data filtered by device and range
             const response = await fetch(`/api/history?range=${currentRange}&device_id=${currentDevice}`);
             const data = await response.json();
             
             const times = data.map(d => new Date(d.timestamp.replace(" ", "T") + "Z"));
             const temps = data.map(d => d.temperature);
-            const hums = data.map(d => d.humidity);
-            const gases = data.map(d => d.gas_resistance / 1000.0); 
+            const hums  = data.map(d => d.humidity);
+            const press = data.map(d => d.pressure);
+            const gases = data.map(d => d.gas_resistance / 1000.0);
 
+            // Check availability (Is value > 0 anywhere in the dataset?)
+            const hasPres = press.some(v => v > 0);
+            const hasGas  = gases.some(v => v > 0);
+
+            // Update Cards (Values)
             if (data.length > 0) {
                 const last = data[data.length - 1];
                 document.getElementById('cur-temp').innerText = last.temperature.toFixed(1) + " °C";
-                document.getElementById('cur-hum').innerText = last.humidity.toFixed(0) + " %";
+                document.getElementById('cur-hum').innerText  = last.humidity.toFixed(0) + " %";
                 document.getElementById('cur-pres').innerText = last.pressure.toFixed(0) + " hPa";
-                document.getElementById('cur-gas').innerText = (last.gas_resistance / 1000).toFixed(1);
-            } else {
-                // Reset if no data for range
-                document.getElementById('cur-temp').innerText = "--";
+                document.getElementById('cur-gas').innerText  = (last.gas_resistance / 1000).toFixed(1);
             }
 
-            const ctxTemp = document.getElementById('tempChart').getContext('2d');
-            if (tempChart) tempChart.destroy();
-            tempChart = new Chart(ctxTemp, {
-                type: 'line',
-                data: {
-                    labels: times,
-                    datasets: [{
-                        label: 'Temperature (°C)', data: temps,
-                        borderColor: '#ff6384', backgroundColor: 'rgba(255, 99, 132, 0.2)',
-                        borderWidth: 2, tension: 0.3, fill: true,
-                        pointRadius: currentRange === 'hour' ? 3 : 0 
-                    }]
-                },
-                options: commonOptions
-            });
-
-            const ctxHum = document.getElementById('humChart').getContext('2d');
-            if (humChart) humChart.destroy();
-            humChart = new Chart(ctxHum, {
+            // --- CHART 1: Temp & Hum (Combined, Dual Axis) ---
+            const ctxMain = document.getElementById('tempHumChart').getContext('2d');
+            if (charts.main) charts.main.destroy();
+            charts.main = new Chart(ctxMain, {
                 type: 'line',
                 data: {
                     labels: times,
                     datasets: [
-                        { label: 'Humidity (%)', data: hums, borderColor: '#36a2eb', borderWidth: 2, yAxisID: 'y', pointRadius: 0 },
-                        { label: 'Air Quality (kOhm)', data: gases, borderColor: '#ffcd56', borderWidth: 2, yAxisID: 'y1', pointRadius: 0 }
+                        {
+                            label: 'Temperature (°C)',
+                            data: temps,
+                            borderColor: '#ff6384', backgroundColor: '#ff638433',
+                            yAxisID: 'y',
+                            fill: true, tension: 0.3, pointRadius: currentRange === 'hour' ? 3 : 0
+                        },
+                        {
+                            label: 'Humidity (%)',
+                            data: hums,
+                            borderColor: '#36a2eb',
+                            yAxisID: 'y1',
+                            fill: false, tension: 0.3, pointRadius: 0
+                        }
                     ]
                 },
                 options: {
-                    ...commonOptions,
+                    responsive: true, maintainAspectRatio: false,
+                    interaction: { mode: 'index', intersect: false },
                     scales: {
-                        ...commonOptions.scales,
-                        y: { ...commonOptions.scales.y, position: 'left', title: {display: true, text: '%'} },
-                        y1: { position: 'right', grid: {drawOnChartArea: false}, title: {display: true, text: 'kOhm', color: '#ffcd56'}, ticks: {color: '#ffcd56'} }
+                        x: { type: 'time', time: { tooltipFormat: fmtFull, displayFormats: { minute: fmtHour, hour: fmtHour, day: fmtDay } }, grid: { color: '#444' } },
+                        y:  { type: 'linear', display: true, position: 'left', title: {display: true, text: '°C'}, grid: { color: '#444' } },
+                        y1: { type: 'linear', display: true, position: 'right', title: {display: true, text: '%'}, grid: { drawOnChartArea: false } }
                     }
                 }
             });
 
+            // --- CHART 2: Pressure (Conditional) ---
+            toggleSection('pres', hasPres);
+            if(hasPres) renderSingleChart('pres', 'presChart', 'Pressure (hPa)', '#4bc0c0', times, press);
+
+            // --- CHART 3: Gas (Conditional) ---
+            toggleSection('gas', hasGas);
+            if(hasGas) renderSingleChart('gas', 'gasChart', 'Gas Resistance (kOhm)', '#ffcd56', times, gases);
+
         } catch (err) { console.error(err); }
     }
 
-    // Init
+    // Helper for single charts
+    function renderSingleChart(key, ctxId, label, color, times, dataPoints) {
+        const ctx = document.getElementById(ctxId).getContext('2d');
+        if (charts[key]) charts[key].destroy();
+        charts[key] = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: times,
+                datasets: [{
+                    label: label, data: dataPoints, borderColor: color, backgroundColor: color + '33',
+                    borderWidth: 2, tension: 0.3, fill: true, pointRadius: currentRange === 'hour' ? 3 : 0
+                }]
+            },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                scales: {
+                    x: { type: 'time', time: { tooltipFormat: fmtFull, displayFormats: { minute: fmtHour, hour: fmtHour, day: fmtDay } }, grid: { color: '#444' } },
+                    y: { grid: { color: '#444' } }
+                },
+                plugins: { legend: { display: false } }
+            }
+        });
+    }
+
+    // Toggle visibility of Card AND Chart
+    function toggleSection(key, isVisible) {
+        const displayStyle = isVisible ? 'block' : 'none';
+        
+        // Toggle Card
+        const card = document.getElementById('card-' + key);
+        if(card) {
+             if(isVisible) card.classList.remove('card-hidden');
+             else card.classList.add('card-hidden');
+        }
+
+        // Toggle Chart Wrapper
+        const wrapper = document.getElementById('wrap-' + key);
+        if(wrapper) {
+             if(isVisible) wrapper.classList.remove('chart-wrapper-hidden');
+             else wrapper.classList.add('chart-wrapper-hidden');
+        }
+    }
+
     loadDevices();
     setInterval(loadData, 30000); 
 </script>
@@ -240,17 +297,15 @@ HTML_TEMPLATE = """
 </html>
 """
 
-# --- ROUTES ---
 
+# --- ROUTES (No Changes Needed) ---
 @app.route('/')
 def dashboard():
     return render_template_string(HTML_TEMPLATE, use_12h=config.TIME_FORMAT_12H)
 
-# NEW: API to list all devices
 @app.route('/api/devices')
 def get_devices():
     conn = get_db_connection()
-    # Find all distinct device_ids
     devices = conn.execute("SELECT DISTINCT device_id FROM measurements WHERE device_id IS NOT NULL").fetchall()
     conn.close()
     device_list = [d['device_id'] for d in devices]
@@ -259,20 +314,16 @@ def get_devices():
 @app.route('/api/history')
 def get_history():
     time_range = request.args.get('range', 'day')
-    device_id = request.args.get('device_id') # Filter by device
+    device_id = request.args.get('device_id')
     
     conn = get_db_connection()
-    
-    # Base WHERE clause
     where_clause = "WHERE 1=1"
     params = []
     
-    # Add device filter
     if device_id:
         where_clause += " AND device_id = ?"
         params.append(device_id)
         
-    # Time logic
     time_filter = ""
     if time_range == 'hour': time_filter = "AND timestamp >= datetime('now', '-1 hour')"
     elif time_range == 'day': time_filter = "AND timestamp >= datetime('now', '-24 hours')"
@@ -281,10 +332,8 @@ def get_history():
     
     where_clause += f" {time_filter}"
 
-    # Build Query based on range (Aggregation)
     query = ""
     if time_range in ['week', 'month']:
-        # Grouped Query
         query = f"""
             SELECT strftime('%Y-%m-%d %H:00:00', timestamp) as ts_group, 
                    AVG(temperature) as temperature, 
@@ -297,7 +346,6 @@ def get_history():
             ORDER BY ts_group ASC
         """
     else:
-        # Full Resolution Query
         query = f"""
             SELECT timestamp, temperature, humidity, pressure, gas_resistance 
             FROM measurements 
@@ -328,12 +376,11 @@ def get_history():
 @app.route('/post-data', methods=['POST'])
 def post_data():
     received_key = request.form.get('api_key')
-    
     if received_key != config.API_KEY:
         return jsonify({"status": "error", "message": "Invalid API Key"}), 403
 
     try:
-        device_id = request.form.get('device_id', 'unknown') # Default to 'unknown' if missing
+        device_id = request.form.get('device_id', 'unknown')
         temp = float(request.form.get('temperature'))
         hum = float(request.form.get('humidity'))
         pres = float(request.form.get('pressure'))
@@ -345,7 +392,6 @@ def post_data():
                   (device_id, temp, hum, pres, gas))
         conn.commit()
         conn.close()
-        
         print(f"[{datetime.datetime.now()}] Saved from {device_id}: {temp}°C")
         return jsonify({"status": "success"}), 200
 
